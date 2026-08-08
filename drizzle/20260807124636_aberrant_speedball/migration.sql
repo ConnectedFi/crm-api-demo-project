@@ -1,0 +1,1 @@
+ALTER TABLE "financing_applications" ADD COLUMN "crm_position" integer DEFAULT 0 NOT NULL;

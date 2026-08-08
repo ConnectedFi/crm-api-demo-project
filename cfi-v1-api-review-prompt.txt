@@ -1,0 +1,94 @@
+Please refine and implement the proposed CFI v1 CRM/commerce API below. Preserve the overall resource-oriented design, but incorporate the contract requirements and clarifications that follow.
+
+Proposed surface:
+
+GET /v1/me
+GET /v1/people
+GET /v1/organizations
+GET /v1/financing-lines
+GET /v1/financing-lines/{financingUuid}
+POST /v1/financing-lines
+POST /v1/financing-lines/{financingUuid}/draw-eligibility
+POST /v1/draws
+GET /v1/draws/{drawUuid}
+GET /v1/draws
+
+Requirements:
+
+1. Make POST /v1/financing-lines idempotent.
+   - Accept an Idempotency-Key header.
+   - A retry with the same key must return the original outcome and must not create duplicate people, organizations, or financing applications.
+   - Keep externalReference as an optional caller correlation value, but do not treat it as an idempotency key unless uniqueness and replay behavior are explicitly guaranteed per dealer.
+
+2. Use explicitly discriminated references for people and organizations.
+   - Existing person: { mode: "existing", personUuid }
+   - New person: { mode: "new", ...required person fields }
+   - Existing organization: { mode: "existing", organizationUuid }
+   - New organization: { mode: "new", ...required organization fields }
+   - Do not silently merge a mode: "new" record based only on matching email or EIN. Return a structured probable-match conflict that lets the caller resubmit using an existing UUID.
+   - Reject duplicate participants and prevent the main applicant from also appearing as a co-applicant.
+
+3. Define complete, reusable resource schemas.
+   - Person must include personUuid, identity/contact fields exposed to dealers, createdAt, updatedAt, and archivedAt or an equivalent lifecycle marker.
+   - Organization must include organizationUuid, name, EIN, contact/address fields exposed to dealers, createdAt, updatedAt, and archivedAt or an equivalent marker.
+   - FinancingLine must include financingUuid, externalReference when supplied, lifecycle status, requested amount, currency, participants, organizationUuid, facility/loan information when present, createdAt, updatedAt, and archivedAt or an equivalent marker.
+   - participants must contain every main and co-applicant as { personUuid, role }, where role is main_applicant or co_applicant.
+   - Document explicitly whether a FinancingLine spans the entire application-to-loan lifecycle. If it does not, use an Application resource for the pre-funding stages instead.
+   - Represent all minor-unit monetary values as base-10 strings, never JSON floating-point numbers. Include an ISO currency code anywhere money appears.
+
+4. Define POST /v1/financing-lines as one idempotent application-submission operation with all-or-nothing submission semantics.
+   - Avoid promising a literal database transaction if submission starts workflows or communicates with another system.
+   - On success, all parties are resolved or created, linked with explicit roles, and one application is submitted.
+   - On validation or identity conflict, no application is submitted.
+   - Return the FinancingLine plus the resolved/created Person and Organization resources.
+   - Specify whether success is synchronous (201) or accepted for asynchronous processing (202), and expose a status that can be retrieved later.
+
+5. Tighten draw-eligibility behavior.
+   - Require amountMinor for checkout eligibility checks unless there is a clearly documented separate use case for omitting it.
+   - trancheId may be omitted to discover eligible tranches or supplied to check a particular tranche.
+   - Make clear that this endpoint is non-reserving and that POST /v1/draws is authoritative.
+   - Return overall availability, currency, eligible tranches, and a machine-readable reason object such as { code, message, retriable, details }.
+   - Clarify whether availableMinor is line-wide or tranche-specific.
+
+6. Make POST /v1/draws safely idempotent.
+   - Prefer the standard Idempotency-Key header, or clearly justify keeping idempotencyKey in the JSON body.
+   - Bind the key to the authenticated dealer and the original request.
+   - Reusing a key must return the recorded original outcome without executing another draw.
+   - Define behavior when the same key is reused with different input.
+   - The authoritative draw operation must revalidate financing-line state, available credit, amount, currency, and tranche eligibility.
+   - Define Draw statuses such as pending, succeeded, failed, and declined, including machine-readable failure information and retriability.
+
+7. Specify list and synchronization semantics for GET /people, /organizations, /financing-lines, and /draws.
+   - Use stable cursor pagination with documented default and maximum limits.
+   - Define deterministic ordering and cursor scope by authenticated dealer and environment.
+   - State whether traversing all pages represents a consistent snapshot.
+   - Define what it means when a previously returned resource disappears.
+   - Expose explicit archive/deletion lifecycle state where possible.
+   - Explain how access revocation appears to clients.
+   - If absence is not a safe deletion signal, instruct clients to retain unseen resources and mark them stale.
+   - A future incremental change-feed endpoint may be added, but the list endpoints must be sufficient for a correct initial import and safe full refresh.
+
+8. Define filtering behavior.
+   - GET /people?email= must state whether matching is exact and case-insensitive.
+   - GET /organizations?ein= must define normalization and exact-match behavior.
+   - GET /financing-lines filters must work for both main and co-applicant person UUIDs.
+   - Specify whether multiple filters are combined with AND semantics.
+
+9. Use one shared error envelope across the API, for example:
+   {
+     "error": {
+       "code": "insufficient_credit",
+       "message": "Available credit does not cover the requested amount.",
+       "retriable": false,
+       "details": {}
+     },
+     "requestId": "..."
+   }
+   Document status codes and possible machine codes for every operation, including authentication, authorization, validation, probable identity matches, not found, idempotency conflicts, ineligible draws, insufficient credit, and in-progress operations.
+
+10. Update the generated OpenAPI documentation and examples.
+    - Include complete request and response schemas rather than generic strings or untyped objects.
+    - Include examples for existing and new parties, co-applicants, personal applications without an organization, funded and unfunded financing lines, eligible and ineligible draws, pagination, archives, identity conflicts, and idempotent replay.
+    - Clearly state authentication scope: every collection and resource must be restricted to records accessible to the authenticated dealer.
+
+After implementing the API, add contract tests covering pagination, dealer isolation, main/co-applicant discovery, identity conflicts, idempotent application submission, idempotent draws, draw revalidation, archival behavior, and safe full-refresh synchronization. Provide a concise summary of final endpoint contracts and any remaining limitations.
