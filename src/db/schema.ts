@@ -17,6 +17,17 @@ export type SeedWorldOrderItem = {
   unitPriceCents: number
 }
 
+export type CfiDrawRequest = {
+  financingUuid: string
+  idempotencyKey: string
+  loanRef: string
+  expectedMainApplicantPersonUuid: string
+  amountMinor: string
+  description: string
+  trancheId: string
+  invoiceRef: string
+}
+
 export const applicants = pgTable("applicants", {
   personUuid: uuid("person_uuid").primaryKey(),
   firstName: text("first_name").notNull(),
@@ -86,6 +97,7 @@ export const seedWorldOrders = pgTable("seed_world_orders", {
   cfiFinancingUuid: uuid("cfi_financing_uuid"),
   cfiDrawUuid: uuid("cfi_draw_uuid"),
   cfiDrawStatus: text("cfi_draw_status"),
+  cfiDrawRequest: jsonb("cfi_draw_request").$type<CfiDrawRequest | null>(),
   cfiDrawFailure: jsonb("cfi_draw_failure").$type<{
     reason: string
     retriable: boolean

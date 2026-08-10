@@ -1,0 +1,1 @@
+ALTER TABLE "seed_world_orders" ADD COLUMN "cfi_draw_request" jsonb;

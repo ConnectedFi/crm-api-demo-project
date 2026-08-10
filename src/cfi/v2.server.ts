@@ -165,11 +165,6 @@ const createDrawResponseSchema = z.object({
   draw: drawSchema,
 })
 
-const drawsPageSchema = z.object({
-  items: z.array(drawSchema),
-  nextCursor: cursorSchema,
-})
-
 const submitApplicationResponseSchema = z.object({
   replayed: z.boolean(),
   financingLine: financingLineSchema,
@@ -181,6 +176,19 @@ const incompleteApplicationEntitySchema = z.object({
   errors: z.array(z.string()),
 })
 
+const requestValidationIssueSchema = z.object({
+  path: z.array(z.union([z.string(), z.number().int().nonnegative()])),
+  code: z.enum([
+    "required",
+    "invalid_type",
+    "invalid_format",
+    "out_of_range",
+    "unrecognized_key",
+    "invalid_value",
+  ]),
+  message: z.string(),
+})
+
 const cfiErrorResponseSchema = z.object({
   message: z.string().optional(),
   data: z
@@ -189,6 +197,7 @@ const cfiErrorResponseSchema = z.object({
       retriable: z.boolean().optional(),
       guidance: z.string().optional(),
       entities: z.array(incompleteApplicationEntitySchema).optional(),
+      issues: z.array(requestValidationIssueSchema).optional(),
     })
     .passthrough()
     .optional(),
@@ -202,28 +211,35 @@ export type CfiV2Draw = z.infer<typeof drawSchema>
 export type CfiIncompleteApplicationEntity = z.infer<
   typeof incompleteApplicationEntitySchema
 >
+export type CfiRequestValidationIssue = z.infer<
+  typeof requestValidationIssueSchema
+>
 
 export class CfiV2RequestError extends Error {
   reason: string | null
   retriable: boolean | null
   entities: Array<CfiIncompleteApplicationEntity>
+  issues: Array<CfiRequestValidationIssue>
 
   constructor({
     message,
     reason,
     retriable,
     entities,
+    issues,
   }: {
     message: string
     reason?: string
     retriable?: boolean
     entities?: Array<CfiIncompleteApplicationEntity>
+    issues?: Array<CfiRequestValidationIssue>
   }) {
     super(message)
     this.name = "CfiV2RequestError"
     this.reason = reason ?? null
     this.retriable = retriable ?? null
     this.entities = entities ?? []
+    this.issues = issues ?? []
   }
 }
 
@@ -263,6 +279,7 @@ async function postV2(path: string, body: unknown) {
       reason: parsed.success ? parsed.data.data?.reason : undefined,
       retriable: parsed.success ? parsed.data.data?.retriable : undefined,
       entities: parsed.success ? parsed.data.data?.entities : undefined,
+      issues: parsed.success ? parsed.data.data?.issues : undefined,
     })
   }
 
@@ -396,17 +413,6 @@ export async function createV2Draw(input: {
 
 export async function fetchV2Draw(drawUuid: string) {
   return drawSchema.parse(await postV2("draw", { drawUuid }))
-}
-
-export async function fetchV2DrawsPage(
-  input: {
-    cursor?: string
-    limit?: number
-    financingUuid?: string
-    loanUuid?: string
-  } = {}
-) {
-  return drawsPageSchema.parse(await postV2("draws", input))
 }
 
 export function parseV2PeoplePage(value: unknown) {

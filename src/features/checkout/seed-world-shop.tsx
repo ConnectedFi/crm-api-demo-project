@@ -541,25 +541,27 @@ export function SeedWorldCheckoutPage({
     setIsPaying(true)
     setError(null)
     let orderSavedForDraw = false
+    const drawRequest = {
+      financingUuid: selectedLine.financingUuid,
+      loanRef: selectedLine.loanUuid,
+      expectedMainApplicantPersonUuid: selectedLine.mainApplicantPersonUuid,
+      trancheId: selectedTrancheId,
+      amountMinor: String(totalCents),
+      description: `Seed World order ${invoiceRef}`,
+      invoiceRef,
+      idempotencyKey: `seedworld-${orderId}-draw-1`,
+    }
     try {
       await persistOrder({
         paymentMethod: "cfi",
         orderStatus: "draw_processing",
         financingUuid: selectedLine.financingUuid,
         resolvedCustomerPersonUuid: financingOverview?.personUuid,
+        drawRequest,
       })
       orderSavedForDraw = true
       const draw = await createDraw({
-        data: {
-          financingUuid: selectedLine.financingUuid,
-          loanRef: selectedLine.loanUuid,
-          expectedMainApplicantPersonUuid: selectedLine.mainApplicantPersonUuid,
-          trancheId: selectedTrancheId,
-          amountMinor: String(totalCents),
-          description: `Seed World order ${invoiceRef}`,
-          invoiceRef,
-          idempotencyKey: `seedworld-${orderId}-draw-1`,
-        },
+        data: drawRequest,
       })
       await persistOrder({
         paymentMethod: "cfi",
@@ -572,6 +574,7 @@ export function SeedWorldCheckoutPage({
         financingUuid: selectedLine.financingUuid,
         drawUuid: draw.draw.drawUuid,
         drawStatus: draw.draw.status,
+        drawRequest,
       })
       if (draw.draw.status !== "succeeded") {
         if (draw.draw.status === "in_progress") {
@@ -635,6 +638,7 @@ export function SeedWorldCheckoutPage({
     drawUuid = null,
     drawStatus = null,
     resolvedCustomerPersonUuid,
+    drawRequest = null,
   }: {
     paymentMethod: "card" | "cfi"
     orderStatus:
@@ -643,6 +647,16 @@ export function SeedWorldCheckoutPage({
     drawUuid?: string | null
     drawStatus?: "in_progress" | "succeeded" | "rejected" | null
     resolvedCustomerPersonUuid?: string | null
+    drawRequest?: {
+      financingUuid: string
+      idempotencyKey: string
+      loanRef: string
+      expectedMainApplicantPersonUuid: string
+      amountMinor: string
+      description: string
+      trancheId: string
+      invoiceRef: string
+    } | null
   }) {
     if (!customer) throw new Error("Choose a customer before saving the order.")
     await saveOrder({
@@ -667,6 +681,7 @@ export function SeedWorldCheckoutPage({
         cfiFinancingUuid: financingUuid,
         cfiDrawUuid: drawUuid,
         cfiDrawStatus: drawStatus,
+        cfiDrawRequest: drawRequest,
       },
     })
   }

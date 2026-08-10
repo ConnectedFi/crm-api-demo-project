@@ -5,7 +5,6 @@ import { z } from "zod"
 import {
   createCfiDraw,
   fetchCfiDraw,
-  fetchCfiDrawsPage,
   fetchDrawEligibility,
 } from "@/cfi/checkout-financing.server"
 import { getDatabase } from "@/db/connection.server"
@@ -42,6 +41,18 @@ const saveOrderSchema = z.object({
   cfiFinancingUuid: z.uuid().nullable(),
   cfiDrawUuid: z.uuid().nullable(),
   cfiDrawStatus: z.enum(["in_progress", "succeeded", "rejected"]).nullable(),
+  cfiDrawRequest: z
+    .object({
+      financingUuid: z.uuid(),
+      idempotencyKey: z.string().min(8).max(128),
+      loanRef: z.uuid(),
+      expectedMainApplicantPersonUuid: z.uuid(),
+      amountMinor: z.string().regex(/^[1-9]\d*$/),
+      description: z.string().min(1),
+      trancheId: z.uuid(),
+      invoiceRef: z.string().min(1),
+    })
+    .nullable(),
 })
 
 export const saveSeedWorldOrder = createServerFn({ method: "POST" })
@@ -64,6 +75,7 @@ export const saveSeedWorldOrder = createServerFn({ method: "POST" })
           cfiFinancingUuid: data.cfiFinancingUuid,
           cfiDrawUuid: data.cfiDrawUuid,
           cfiDrawStatus: data.cfiDrawStatus,
+          cfiDrawRequest: data.cfiDrawRequest,
           updatedAt: new Date(),
         },
       })
@@ -244,7 +256,7 @@ export const drawOrderWithCfi = createServerFn({ method: "POST" })
         )
       }
 
-      const result = await createCfiDraw({
+      const drawRequest = {
         financingUuid: row.line!.financingUuid,
         idempotencyKey: `seedworld-${row.order.orderUuid}-draw-1`,
         loanRef: loanUuid,
@@ -253,7 +265,18 @@ export const drawOrderWithCfi = createServerFn({ method: "POST" })
         description: `Seed World order ${row.order.invoiceRef}`,
         trancheId: data.trancheId,
         invoiceRef: row.order.invoiceRef,
-      })
+      }
+      await getDatabase()
+        .update(seedWorldOrders)
+        .set({
+          cfiDrawRequest: drawRequest,
+          cfiDrawStatus: "in_progress",
+          orderStatus: "draw_processing",
+          updatedAt: new Date(),
+        })
+        .where(eq(seedWorldOrders.orderUuid, row.order.orderUuid))
+
+      const result = await createCfiDraw(drawRequest)
       const status = result.draw.status
       await getDatabase()
         .update(seedWorldOrders)
@@ -301,22 +324,14 @@ export const reconcileOrderDraws = createServerFn({ method: "POST" }).handler(
           order.paymentMethod === "cfi" &&
           order.orderStatus === "draw_processing" &&
           Boolean(order.cfiFinancingUuid) &&
-          !order.cfiDrawUuid
+          !order.cfiDrawUuid &&
+          Boolean(order.cfiDrawRequest)
       )
       const recoveredResults = (
         await Promise.all(
           unlinkedOrders.map(async (order) => {
-            const page = await fetchCfiDrawsPage({
-              financingUuid: order.cfiFinancingUuid!,
-              limit: 100,
-            })
-            const draw = page.items.find(
-              (candidate) =>
-                candidate.invoiceRef === order.invoiceRef ||
-                candidate.idempotencyKey ===
-                  `seedworld-${order.orderUuid}-draw-1`
-            )
-            return draw ? { order, draw } : null
+            const result = await createCfiDraw(order.cfiDrawRequest!)
+            return { order, draw: result.draw }
           })
         )
       ).filter((result): result is NonNullable<typeof result> =>
