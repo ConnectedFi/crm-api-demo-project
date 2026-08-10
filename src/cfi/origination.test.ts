@@ -180,4 +180,58 @@ describe("CFI V2 origination responses", () => {
       ],
     })
   })
+
+  it("preserves field paths and codes for invalid requests", async () => {
+    process.env.CFI_API_KEY = "test-key"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            defined: true,
+            code: "BAD_REQUEST",
+            status: 400,
+            message: "Input validation failed",
+            data: {
+              reason: "invalid_request",
+              retriable: false,
+              issues: [
+                {
+                  path: ["organization", "ein"],
+                  code: "required",
+                  message: "EIN is required.",
+                },
+                {
+                  path: ["coApplicants", 0, "email"],
+                  code: "invalid_format",
+                  message: "Must be a valid email address.",
+                },
+              ],
+            },
+          },
+          { status: 400 }
+        )
+      )
+    )
+
+    const error = await submitCfiApplication(submissionInput).catch(
+      (reason: unknown) => reason
+    )
+
+    expect(error).toBeInstanceOf(CfiV2RequestError)
+    expect(error).toMatchObject({
+      reason: "invalid_request",
+      retriable: false,
+      issues: [
+        {
+          path: ["organization", "ein"],
+          code: "required",
+        },
+        {
+          path: ["coApplicants", 0, "email"],
+          code: "invalid_format",
+        },
+      ],
+    })
+  })
 })

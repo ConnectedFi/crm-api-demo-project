@@ -101,16 +101,33 @@ export const submissionInputSchema = z.object({
 
 export type SubmissionInput = z.infer<typeof submissionInputSchema>
 
-export type ApplicationSubmissionFailure = {
-  ok: false
-  reason: "incomplete_application"
-  retriable: boolean
-  entities: Array<{
-    kind: "person" | "organization" | "loan"
-    ref: string
-    errors: Array<string>
-  }>
-}
+export type ApplicationSubmissionFailure =
+  | {
+      ok: false
+      reason: "incomplete_application"
+      retriable: boolean
+      entities: Array<{
+        kind: "person" | "organization" | "loan"
+        ref: string
+        errors: Array<string>
+      }>
+    }
+  | {
+      ok: false
+      reason: "invalid_request"
+      retriable: boolean
+      issues: Array<{
+        path: Array<string | number>
+        code:
+          | "required"
+          | "invalid_type"
+          | "invalid_format"
+          | "out_of_range"
+          | "unrecognized_key"
+          | "invalid_value"
+        message: string
+      }>
+    }
 
 export const getApplicationReferenceData = createServerFn({
   method: "GET",
@@ -163,6 +180,18 @@ export const submitNewApplication = createServerFn({ method: "POST" })
           reason: "incomplete_application" as const,
           retriable: error.retriable ?? false,
           entities: error.entities,
+        } satisfies ApplicationSubmissionFailure
+      }
+      if (
+        error instanceof CfiV2RequestError &&
+        error.reason === "invalid_request" &&
+        error.issues.length > 0
+      ) {
+        return {
+          ok: false as const,
+          reason: "invalid_request" as const,
+          retriable: error.retriable ?? false,
+          issues: error.issues,
         } satisfies ApplicationSubmissionFailure
       }
       Sentry.captureException(error)

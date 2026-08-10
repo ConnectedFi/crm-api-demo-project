@@ -1193,11 +1193,39 @@ function ApplicationSubmissionErrors({
   coApplicants: Array<PersonDraft>
   organization: OrganizationDraft
 }) {
+  if (failure.reason === "invalid_request") {
+    return (
+      <div
+        role="alert"
+        className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-950"
+      >
+        <div className="flex items-start gap-3">
+          <CircleAlert className="mt-0.5 size-5 shrink-0 text-red-700" />
+          <div className="min-w-0">
+            <p className="font-semibold">Correct the submitted fields</p>
+            <p className="mt-1 text-xs leading-5 text-red-900/75">
+              CFI rejected the request before application processing began.
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-5">
+              {failure.issues.map((issue, index) => (
+                <li key={`${issue.path.join(".")}-${issue.code}-${index}`}>
+                  <span className="font-medium">
+                    {formatValidationPath(issue.path)}:
+                  </span>{" "}
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const incompleteFailure = failure
   const people = [mainApplicant, ...coApplicants]
 
-  function entityLabel(
-    entity: ApplicationSubmissionFailure["entities"][number]
-  ) {
+  function entityLabel(entity: (typeof incompleteFailure.entities)[number]) {
     if (entity.kind === "person") {
       const person = people.find(
         (candidate) =>
@@ -1229,7 +1257,7 @@ function ApplicationSubmissionErrors({
             Correct the details below before submitting this application again.
           </p>
           <div className="mt-3 space-y-3">
-            {failure.entities.map((entity) => (
+            {incompleteFailure.entities.map((entity) => (
               <div key={`${entity.kind}-${entity.ref}`}>
                 <p className="font-medium">{entityLabel(entity)}</p>
                 <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5">
@@ -1240,7 +1268,7 @@ function ApplicationSubmissionErrors({
               </div>
             ))}
           </div>
-          {!failure.retriable ? (
+          {!incompleteFailure.retriable ? (
             <p className="mt-3 text-xs leading-5 text-red-900/75">
               Retrying without correcting these records will return the same
               result.
@@ -1250,6 +1278,22 @@ function ApplicationSubmissionErrors({
       </div>
     </div>
   )
+}
+
+function formatValidationPath(path: Array<string | number>) {
+  if (path.length === 0) return "Request"
+  return path
+    .map((part, index) => {
+      if (typeof part === "number") return `#${part + 1}`
+      const label = part
+        .replaceAll("Uuid", "")
+        .replaceAll("_", " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+      return index === 0
+        ? label.charAt(0).toUpperCase() + label.slice(1)
+        : label
+    })
+    .join(" → ")
 }
 
 function FinancialFields<T extends Record<string, string>>({

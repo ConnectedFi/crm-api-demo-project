@@ -4,7 +4,6 @@ import {
   createV2Draw,
   drawEligibilitySchema,
   fetchV2Draw,
-  fetchV2DrawsPage,
   fetchAllV2FinancingLines,
   fetchV2DrawEligibility,
   fetchV2PeoplePage,
@@ -227,14 +226,6 @@ export async function createCfiDraw(input: {
 
 export async function fetchCfiDraw(drawUuid: string) {
   return fetchV2Draw(drawUuid)
-}
-
-export async function fetchCfiDrawsPage(input: {
-  financingUuid?: string
-  loanUuid?: string
-  limit?: number
-}) {
-  return fetchV2DrawsPage(input)
 }
 
 export function parseCreditLines(value: unknown) {
